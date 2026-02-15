@@ -1,58 +1,105 @@
-'use client'
+// src/shared/ui/containers/ContainerMap.tsx
+"use client";
 
-import { Container, Event } from '@/types'
-import { Card, CardContent } from '@/components/ui/card'
-import { MapPin } from 'lucide-react'
+import { useMemo } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { MapPin } from "lucide-react";
+
+type LocationEvent = {
+  id: string | number;
+  type: string;
+  timestamp: string; // ISO
+  metadata?: Record<string, unknown> | null;
+};
 
 interface ContainerMapProps {
-  container: Container
-  events: Event[]
+  container?: { code?: string | null } | null;
+  events: LocationEvent[];
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
-export function ContainerMap({ container, events }: ContainerMapProps) {
-  const hasLocation = container.latitude && container.longitude
+function num(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : null;
+}
 
-  // Get location events
-  const locationEvents = events.filter(
-    e => e.type === 'LOCATION_UPDATE' && e.metadata?.latitude && e.metadata?.longitude
-  )
+function fmt6(n: number) {
+  return n.toFixed(6);
+}
 
-  if (!hasLocation && locationEvents.length === 0) {
+export function ContainerMap({ container, events, latitude, longitude }: ContainerMapProps) {
+  const locationEvents = useMemo(() => {
+    return (events ?? [])
+      .filter((e) => String(e.type) === "LOCATION_UPDATE")
+      .map((e) => {
+        const lat = num(e.metadata?.["latitude"]);
+        const lng = num(e.metadata?.["longitude"]);
+        return lat != null && lng != null
+          ? { id: e.id, timestamp: e.timestamp, latitude: lat, longitude: lng }
+          : null;
+      })
+      .filter(Boolean) as Array<{
+      id: string | number;
+      timestamp: string;
+      latitude: number;
+      longitude: number;
+    }>;
+  }, [events]);
+
+  const current = useMemo(() => {
+    // 1) explicit props
+    if (latitude != null && longitude != null) return { latitude, longitude };
+
+    // 2) latest location event
+    if (locationEvents.length === 0) return null;
+
+    const latest = [...locationEvents].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    )[0];
+
+    return { latitude: latest.latitude, longitude: latest.longitude };
+  }, [latitude, longitude, locationEvents]);
+
+  if (!current && locationEvents.length === 0) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-12">
-          <MapPin className="h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">No location data available</p>
+          <MapPin className="mb-4 h-12 w-12 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Дані про локацію відсутні</p>
         </CardContent>
       </Card>
-    )
+    );
   }
+
+  const code = container?.code ?? "";
 
   return (
     <Card>
-      <CardContent className="p-6 space-y-4">
+      <CardContent className="space-y-4 p-6">
         {/* Current Location */}
-        {hasLocation && (
+        {current && (
           <div>
-            <h3 className="font-medium mb-2">Current Location</h3>
-            <div className="p-4 bg-muted rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
+            <h3 className="mb-2 text-sm font-semibold text-foreground">
+              Поточна локація {code ? `(${code})` : ""}
+            </h3>
+
+            <div className="rounded-lg bg-muted p-4">
+              <div className="mb-2 flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-primary" />
-                <span className="font-medium">Latest Position</span>
+                <span className="text-sm font-medium text-foreground">Остання позиція</span>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Latitude: {container.latitude?.toFixed(6)}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Longitude: {container.longitude?.toFixed(6)}
-              </p>
+
+              <p className="text-sm text-muted-foreground">Широта: {fmt6(current.latitude)}</p>
+              <p className="text-sm text-muted-foreground">Довгота: {fmt6(current.longitude)}</p>
+
               <a
-                href={`https://www.google.com/maps?q=${container.latitude},${container.longitude}`}
+                href={`https://www.google.com/maps?q=${current.latitude},${current.longitude}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-primary hover:underline inline-block mt-2"
+                className="mt-2 inline-block text-sm text-primary hover:underline"
               >
-                View on Google Maps →
+                Відкрити в Google Maps →
               </a>
             </div>
           </div>
@@ -61,36 +108,41 @@ export function ContainerMap({ container, events }: ContainerMapProps) {
         {/* Location History */}
         {locationEvents.length > 0 && (
           <div>
-            <h3 className="font-medium mb-2">Location History</h3>
+            <h3 className="mb-2 text-sm font-semibold text-foreground">Історія локацій</h3>
+
             <div className="space-y-2">
-              {locationEvents.slice(0, 5).map((event) => (
-                <div key={event.id} className="p-3 bg-muted rounded-lg">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium">
-                      {new Date(event.timestamp).toLocaleString()}
-                    </span>
-                    <a
-                      href={`https://www.google.com/maps?q=${event.metadata?.latitude},${event.metadata?.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary hover:underline"
-                    >
-                      View
-                    </a>
+              {locationEvents
+                .slice()
+                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                .slice(0, 5)
+                .map((e) => (
+                  <div key={String(e.id)} className="rounded-lg bg-muted p-3">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-foreground">
+                        {new Date(e.timestamp).toLocaleString("uk-UA")}
+                      </span>
+                      <a
+                        href={`https://www.google.com/maps?q=${e.latitude},${e.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Відкрити
+                      </a>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {fmt6(e.latitude)}, {fmt6(e.longitude)}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {event.metadata?.latitude}, {event.metadata?.longitude}
-                  </p>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
 
         <p className="text-xs text-muted-foreground">
-          Interactive map with route visualization coming soon
+          Інтерактивну карту (Leaflet/Google Maps) додамо, коли буде стабільний endpoint координат.
         </p>
       </CardContent>
     </Card>
-  )
+  );
 }

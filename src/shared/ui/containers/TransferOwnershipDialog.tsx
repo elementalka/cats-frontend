@@ -1,116 +1,131 @@
-'use client'
+// src/shared/ui/containers/TransferOwnershipDialog.tsx
+"use client";
 
-import { useState } from 'react'
-import { Container } from '@/types'
-import { containersApi } from '@/api/containers'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { useToast } from '@/hooks/use-toast'
+import { useEffect, useMemo, useState } from "react";
+import type { ContainerDto } from "@/shared/types";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+// IMPORTANT:
+// У вашому поточному OpenAPI/types немає поля owner у ContainerDto,
+// і немає endpoint'а transferOwnership у src/shared/api/containers.ts.
+// Тому робимо компонент "готовий", але виклик API винесений в пропс onTransfer.
+//
+// Далі ви або:
+// 1) Додаєте endpoint у бек і в api/containers.ts (POST /containers/{id}/transfer?email=... або body)
+// 2) Або видаляєте фічу, якщо її немає в ТЗ.
 
 interface TransferOwnershipDialogProps {
-  container: Container
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onSuccess: () => void
+  container: ContainerDto;
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+
+  // callback that performs actual transfer request
+  onTransfer: (containerId: number, email: string) => Promise<void>;
+
+  // optional: show current owner email if you have it from somewhere else
+  currentOwnerEmail?: string | null;
+}
+
+function isValidEmail(v: string) {
+  // проста перевірка
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 }
 
 export function TransferOwnershipDialog({
   container,
   open,
-  onOpenChange,
-  onSuccess
+  onClose,
+  onSuccess,
+  onTransfer,
+  currentOwnerEmail,
 }: TransferOwnershipDialogProps) {
-  const { toast } = useToast()
-  const [loading, setLoading] = useState(false)
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const containerLabel = useMemo(() => container.code ?? String(container.id), [container.code, container.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    setEmail("");
+    setLoading(false);
+  }, [open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!email) {
-      toast({
-        title: 'Error',
-        description: 'Please enter an email address',
-        variant: 'destructive'
-      })
-      return
+    e.preventDefault();
+
+    const v = email.trim();
+    if (!v) {
+      toast.error("Вкажіть email нового власника");
+      return;
+    }
+    if (!isValidEmail(v)) {
+      toast.error("Некоректний email");
+      return;
     }
 
-    setLoading(true)
-
+    setLoading(true);
     try {
-      await containersApi.transferOwnership(container.id, email)
-      toast({
-        title: 'Success',
-        description: `Ownership transferred to ${email}`
-      })
-      onSuccess()
-      onOpenChange(false)
-      setEmail('')
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.response?.data?.message || 'Failed to transfer ownership',
-        variant: 'destructive'
-      })
+      await onTransfer(container.id, v);
+      toast.success(`Власника для ${containerLabel} змінено на ${v}`);
+      onSuccess();
+      onClose();
+      setEmail("");
+    } catch {
+      toast.error("Не вдалося змінити власника");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  if (!open) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Transfer Ownership</DialogTitle>
-            <DialogDescription>
-              Transfer this container to another user by entering their email address
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="email">New Owner Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="user@example.com"
-                required
-              />
-              <p className="text-sm text-muted-foreground">
-                Current owner: {container.owner.email}
-              </p>
-            </div>
+    <Dialog open={open} onOpenChange={(v) => (!v ? onClose() : undefined)}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>Передати тару іншому користувачу</DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email нового власника</Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="user@example.com"
+              autoComplete="email"
+              required
+            />
+            {currentOwnerEmail ? (
+              <p className="text-xs text-muted-foreground">Поточний власник: {currentOwnerEmail}</p>
+            ) : null}
           </div>
-          <DialogFooter>
+
+          <div className="flex justify-end gap-2 pt-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => {
-                onOpenChange(false)
-                setEmail('')
+                onClose();
+                setEmail("");
               }}
               disabled={loading}
             >
-              Cancel
+              Скасувати
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Transferring...' : 'Transfer'}
+              {loading ? "Передаємо..." : "Передати"}
             </Button>
-          </DialogFooter>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

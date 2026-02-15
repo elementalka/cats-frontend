@@ -1,86 +1,149 @@
-'use client'
+// src/shared/ui/containers/ContainerTimeline.tsx
+"use client";
 
-import { Event } from '@/types'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { format } from 'date-fns'
-import { 
-  Package, 
-  Truck, 
-  MapPin, 
-  CheckCircle, 
-  AlertCircle,
-  User
-} from 'lucide-react'
+import { useMemo } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { format } from "date-fns";
+import { uk } from "date-fns/locale";
+import { Package, MapPin, CheckCircle, User, Truck } from "lucide-react";
+
+
+export type TimelineEventType =
+  | "STATUS_CHANGE"
+  | "LOCATION_UPDATE"
+  | "OWNERSHIP_TRANSFER"
+  | "CREATED"
+  | "UPDATED"
+  | "SCANNED"
+  | "FILL"
+  | "EMPTY"
+  | "EDIT_FILL";
+
+export type TimelineEvent = {
+  id: string | number;
+  type: TimelineEventType | string;
+  timestamp: string; // ISO
+  description?: string | null;
+  metadata?: Record<string, unknown> | null;
+  performedBy?: { id?: string | null; name?: string | null } | null;
+};
 
 interface ContainerTimelineProps {
-  events: Event[]
+  events: TimelineEvent[];
 }
 
-const eventIcons = {
+const eventIcons: Record<string, React.ElementType> = {
   STATUS_CHANGE: Package,
   LOCATION_UPDATE: MapPin,
   OWNERSHIP_TRANSFER: User,
   CREATED: CheckCircle,
   UPDATED: Package,
-  SCANNED: Truck
+  SCANNED: Truck,
+  FILL: Package,
+  EMPTY: Package,
+  EDIT_FILL: Package,
+};
+
+const eventBadgeClasses: Record<string, string> = {
+  STATUS_CHANGE: "bg-blue-500 text-white",
+  LOCATION_UPDATE: "bg-emerald-600 text-white",
+  OWNERSHIP_TRANSFER: "bg-purple-600 text-white",
+  CREATED: "bg-muted text-foreground",
+  UPDATED: "bg-amber-500 text-white",
+  SCANNED: "bg-orange-500 text-white",
+  FILL: "bg-blue-500 text-white",
+  EMPTY: "bg-gray-600 text-white",
+  EDIT_FILL: "bg-amber-500 text-white",
+};
+
+function humanizeType(t: string) {
+  const map: Record<string, string> = {
+    STATUS_CHANGE: "Зміна статусу",
+    LOCATION_UPDATE: "Оновлення локації",
+    OWNERSHIP_TRANSFER: "Передача власника",
+    CREATED: "Створено",
+    UPDATED: "Оновлено",
+    SCANNED: "Сканування",
+    FILL: "Заповнення",
+    EMPTY: "Спорожнення",
+    EDIT_FILL: "Редагування вмісту",
+  };
+  return map[t] ?? t.replace(/_/g, " ").toLowerCase();
 }
 
-const eventColors = {
-  STATUS_CHANGE: 'bg-blue-500',
-  LOCATION_UPDATE: 'bg-green-500',
-  OWNERSHIP_TRANSFER: 'bg-purple-500',
-  CREATED: 'bg-gray-500',
-  UPDATED: 'bg-yellow-500',
-  SCANNED: 'bg-orange-500'
+function safeDate(d: string) {
+  try {
+    const x = new Date(d);
+    if (Number.isNaN(x.getTime())) return null;
+    return x;
+  } catch {
+    return null;
+  }
 }
 
 export function ContainerTimeline({ events }: ContainerTimelineProps) {
-  if (events.length === 0) {
+  const sorted = useMemo(() => {
+    return [...events].sort((a, b) => {
+      const da = safeDate(a.timestamp)?.getTime() ?? 0;
+      const db = safeDate(b.timestamp)?.getTime() ?? 0;
+      return db - da;
+    });
+  }, [events]);
+
+  if (!events || events.length === 0) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-12">
-          <Package className="h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">No events recorded yet</p>
+          <Package className="mb-4 h-12 w-12 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Подій поки немає</p>
         </CardContent>
       </Card>
-    )
+    );
   }
-
-  const sortedEvents = [...events].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  )
 
   return (
     <Card>
       <CardContent className="pt-6">
         <div className="relative space-y-4">
-          {/* Timeline line */}
+          {/* вертикальна лінія */}
           <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border" />
 
-          {sortedEvents.map((event, index) => {
-            const Icon = eventIcons[event.type] || Package
-            const colorClass = eventColors[event.type] || 'bg-gray-500'
+          {sorted.map((event) => {
+            const type = String(event.type);
+            const Icon = eventIcons[type] ?? Package;
+            const badgeClass = eventBadgeClasses[type] ?? "bg-muted text-foreground";
+            const dt = safeDate(event.timestamp);
 
             return (
-              <div key={event.id} className="relative flex gap-4 items-start">
-                {/* Icon */}
-                <div className={`relative z-10 flex items-center justify-center w-8 h-8 rounded-full ${colorClass}`}>
-                  <Icon className="h-4 w-4 text-white" />
+              <div key={String(event.id)} className="relative flex items-start gap-4">
+                {/* Icon bubble */}
+                <div className={`relative z-10 flex h-8 w-8 items-center justify-center rounded-full ${badgeClass}`}>
+                  <Icon className="h-4 w-4" />
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 pb-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <h4 className="font-medium">{event.type.replace(/_/g, ' ')}</h4>
-                    <span className="text-sm text-muted-foreground">
-                      {format(new Date(event.timestamp), 'PPp')}
+                <div className="min-w-0 flex-1 pb-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-foreground">
+                        {humanizeType(type)}
+                      </h4>
+                      <Badge variant="secondary" className="text-[11px]">
+                        {type}
+                      </Badge>
+                    </div>
+
+                    <span className="text-xs text-muted-foreground">
+                      {dt ? format(dt, "dd.MM.yyyy HH:mm", { locale: uk }) : "—"}
                     </span>
                   </div>
-                  {event.description && (
-                    <p className="text-sm text-muted-foreground">{event.description}</p>
-                  )}
-                  {event.metadata && Object.keys(event.metadata).length > 0 && (
+
+                  {event.description ? (
+                    <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>
+                  ) : null}
+
+                  {event.metadata && Object.keys(event.metadata).length > 0 ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {Object.entries(event.metadata).map(([key, value]) => (
                         <Badge key={key} variant="secondary" className="text-xs">
@@ -88,18 +151,19 @@ export function ContainerTimeline({ events }: ContainerTimelineProps) {
                         </Badge>
                       ))}
                     </div>
-                  )}
-                  {event.performedBy && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      by {event.performedBy.name}
+                  ) : null}
+
+                  {event.performedBy?.name ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Виконав(ла): {event.performedBy.name}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
-            )
+            );
           })}
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
