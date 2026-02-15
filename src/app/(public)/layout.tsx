@@ -1,13 +1,7 @@
-import "@/app/globals.css";
-import { ToasterClient } from "@/shared/ui/ToasterClient";
-
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="uk">
-      <body>
-        {children}
-        <ToasterClient />
-      </body>
-    </html>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+      {children}
+    </div>
   );
 }
